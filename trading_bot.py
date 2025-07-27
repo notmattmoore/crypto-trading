@@ -258,7 +258,7 @@ from sys import exit; exit()
 
 T = traders["ETH-USD"]
 print(f"{T.take_profit_perc=}, {T.stop_loss_perc=}, {T.take_profit_ratchet=}")
-T.take_profit_ratchet = 0.02
+T.take_profit_ratchet = 0.01
 print(f"{T.take_profit_perc=}, {T.stop_loss_perc=}, {T.take_profit_ratchet=}")
 
 # NOT EXECUTED {{{1

@@ -285,11 +285,12 @@ class SimTrader: # {{{1
     take_profit_ratchet percent of the take profit price, disable delayed selling and
     place a stop-limit order to lock in the profit.
     """
+    price_stop_loss = position["stop_loss"]["price"]
     price_low = (1 - self.take_profit_ratchet) * price
-    price_high = (1 + self.take_profit_ratchet) * price
+    price_low = max((1 - self.take_profit_ratchet) * price, price_stop_loss)
 
     position["take_profit"]["price"] = price_high
-    if price_low >= position["stop_loss"]["price"]:  # update stop-loss if needed
+    if price_low >= price_stop_loss:  # update stop-loss if needed
       position["stop_loss"] = {
         "side"       : "sell",
         "type"       : "limit",
@@ -1129,22 +1130,20 @@ class CBTrader:  # {{{1
     orders and place a new bracket order to lock in the profits.
     """
     # Calculate new take profit and stop loss prices.
-    price_take_profit = position["take_profit"]["price"]
+    price_ref = candle["close"]
     price_low = max(
-      (1 - self.take_profit_ratchet) * price_take_profit,
+      (1 - self.take_profit_ratchet) * price_ref,
       position["stop_loss"]["price"]
     )
-    price_high = (1 + self.take_profit_ratchet) * price_take_profit
-    price_ref = candle["close"]
+    price_high = (1 + self.take_profit_ratchet) * price_ref
 
-    # Only ratchet if the percent difference between take_profit_price and price_ref
-    # is <= take_profit_ratchet.
-    if (1 + self.take_profit_ratchet) * price_ref < price_take_profit:
+    # Only ratchet if new high price >= take profit price
+    if price_high < position["take_profit"]["price"]:
       return position
 
     # XXX
-    print(f"{datetime_iso()}: ratcheting on position\n{mu.str_dict(position, prefix='  ')}.")
-    self._print_verbose2(f"{datetime_iso()}: ratcheting on position\n{mu.str_dict(position, prefix='  ')}.")
+    print(f"{datetime_iso()}, {mu.func_name()}: ratcheting on position\n{mu.str_dict(position, prefix='  ')}.")
+    print(f"{price_low=}, {price_high=}, {price_ref=}")
 
     # Try to cancel outstanding remote orders. If any fail, bail out.
     cancel_success, _ = self._position_cancel_remote(position)
@@ -1158,7 +1157,7 @@ class CBTrader:  # {{{1
       position["stop_loss"]["price"] = price_low
       return position
 
-    # Form new stop_loss, take_profit, and delayed sell orders.
+    # Form and place new stop_loss, take_profit, and delayed_sell orders.
     position = self._position_form_orders(
       position, price_take_profit=price_high, price_stop_loss=price_low,
       time_delayed_sell=position["delayed_sell"]["time"]
@@ -1434,8 +1433,9 @@ class CBTrader:  # {{{1
     time_delayed_sell=None
   ):
     """
-    Form the take profit, stop loss, and delayed sell orders for the position.
-    Returns the new position. position must have the key "balance_asset" set.
+    Form and place the take profit, stop loss, and delayed sell orders for the
+    position. Returns the new position. position must have the key "balance_asset"
+    set.
     """
     # Default values and sanity checking.
     if price is None:
