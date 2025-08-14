@@ -286,8 +286,8 @@ class SimTrader: # {{{1
     place a stop-limit order to lock in the profit.
     """
     price_stop_loss = position["stop_loss"]["price"]
-    price_low = (1 - self.take_profit_ratchet) * price
     price_low = max((1 - self.take_profit_ratchet) * price, price_stop_loss)
+    price_high = (1 + self.take_profit_ratchet) * price
 
     position["take_profit"]["price"] = price_high
     if price_low >= price_stop_loss:  # update stop-loss if needed
