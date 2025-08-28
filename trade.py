@@ -965,7 +965,7 @@ class CBTrader:  # {{{1
       if position["status"] == "open" and self.take_profit_ratchet > 0:
         position = self._take_profit_ratchet_strat(position, candle)
       if position["status"] == "closed":
-        self._position_close(position)
+        position = self._position_close(position)
 
       position["desc"] = self._position_desc(position)
 
@@ -1048,26 +1048,18 @@ class CBTrader:  # {{{1
   def _position_close(self, position):  # {{{
     """
     Close position. This means updating trader balances and canceling all pending
-    remote orders. If we are unable to cancel an order, then add the order to the
-    array _cancel_order_retry so that we can keep trying to cancel
-    it.
+    remote orders. Returns the closed position.
     """
-    # Try to cancel any open remote orders.
-    _, cancel_results = self._position_cancel_remote(position)
-
-    # Add the asset and currency proceeds of the postion to the overall balances for
-    # deactivated positions.
-    for res in cancel_results.values():
-      if not res["active"] and position["balances_update"]:
-        self.balance_asset += res["order_info"].get("base_delta", 0)
-        self.balance_curr  += res["order_info"].get("quote_delta", 0)
-      elif res["active"]:
-        print(
-          f"WARNING {datetime_iso()}, {mu.func_name()}: could not close position\n",
-          mu.str_dict(position, sep='\n  '), "\nCancellation results:\n",
-          mu.str_dict(cancel_results, sep='\n  '), ".", sep=''
-        )
+    # Cancel remote orders and add the asset and currency proceeds of all orders to
+    # the overall balances.
+    _, position = self._position_cancel_remote(position)
+    for order_type in ["stop_loss", "take_profit", "delayed_sell"]:
+      if position[order_type].get("status") != "open" and position["balances_update"]:
+        self.balance_asset += position[order_type].get("base_delta", 0)
+        self.balance_curr  += position[order_type].get("quote_delta", 0)
+      elif position[order_type].get("status") == "open":
         from IPython import embed; embed()  # XXX
+    return position
   #--------------------------------------------------------------------------}}}
   def _order_update(self, order_info):  # {{{
     """
@@ -1095,7 +1087,7 @@ class CBTrader:  # {{{1
     # Don't bother selling if we are just going to buy again. Instead, cancel all
     # remote orders and re-form the orders from the position.
     if self.decider.dec.lower().startswith("buy"):
-      cancel_status, _ = self._position_cancel_remote(position)
+      cancel_status, position = self._position_cancel_remote(position)
       if not cancel_status:  # do nothing if we failed to cancel the remote orders
         return 0, 0, order
       position = self._position_form_orders(position, price=candle["close"])
@@ -1141,7 +1133,7 @@ class CBTrader:  # {{{1
     print(f"{price_low=}, {price_high=}, {price_ref=}")
 
     # Try to cancel outstanding remote orders. If any fail, bail out.
-    cancel_success, _ = self._position_cancel_remote(position)
+    cancel_success, position = self._position_cancel_remote(position)
     if not cancel_success:
       return position
 
@@ -1190,7 +1182,7 @@ class CBTrader:  # {{{1
       (change in asset, change in currency, order info).
     """
     # Try to cancel outstanding remote orders. If any fail, bail out.
-    cancel_success, _ = self._position_cancel_remote(position)
+    cancel_success, position = self._position_cancel_remote(position)
     if not cancel_success:
       return 0, 0, position[order_key]
 
@@ -1241,33 +1233,37 @@ class CBTrader:  # {{{1
     are the replies from the exchange. $order_ids can be an array of ids or a single
     order id.
     """
-    cancel_replies = self.CB.order_cancel(order_ids)
+    cancel_results = self.CB.order_cancel(order_ids)
     all_cancelled = True
-    for (o_id, res) in cancel_replies.items():
+    for (o_id, res) in cancel_results.items():
       if not res["cancelled"]:
         all_cancelled = False
         print(
             f"WARNING {datetime_iso()}, {mu.func_name()}: failed to cancel order\n"
             f"  order_id: {o_id}\n  {res['order_info']}."
         )
-    return all_cancelled, cancel_replies
+    return all_cancelled, cancel_results
   #--------------------------------------------------------------------------}}}
   def _position_cancel_remote(self, position):  # {{{
     """
     Attempt to cancel all remote orders in position. Returns the pair
-      (status, results),
-    where status is False if any failed to cancel, and otherwise True, and results
-    are the replies from the exchange.
+      (status, updated position),
+    where status is False if any failed to cancel, and otherwise True.
     """
-    # Collect the remote order IDs for open orders.
+    # Collect the remote order IDs for open orders and try to cancel them.
     order_ids = []
     for order_type in ["stop_loss", "take_profit", "delayed_sell"]:
       order_info = position[order_type]
       if order_info.get("status", '') == "open" and "order_id" in order_info.keys():
         order_ids.append(order_info["order_id"])
+    cancel_success, cancel_results = self.order_cancel(order_ids)
 
-    # Try to cancel them. Return the results.
-    cancel_success, cancel_replies = self.order_cancel(order_ids)
+    # Update the position
+    for (o_id, res) in cancel_results.items():
+      for order_type in ["stop_loss", "take_profit", "delayed_sell"]:
+        if position[order_type].get("order_id") == o_id:
+          position[order_type].update(res["order_info"])
+
     if cancel_success:
       self._print_verbose2(
         f"Cancelled remote orders {order_ids} in position\n"
@@ -1278,7 +1274,8 @@ class CBTrader:  # {{{1
         f"WARNING {datetime_iso()}, {mu.func_name()}: could not cancel position\n",
         mu.str_dict(position, sep='\n  '), ".", sep=''
       )
-    return cancel_success, cancel_replies
+
+    return cancel_success, position
   #--------------------------------------------------------------------------}}}
 
   def buy_strat(self):  # {{{
