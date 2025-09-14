@@ -1,12 +1,7 @@
 # imports {{{1
 # general
-from   IPython   import embed
-from   copy      import deepcopy
-from   itertools import repeat
-from   pdb       import pm
-from   time      import sleep, time
-import myutils as mu
-import time    as t
+from copy import deepcopy
+from time import sleep, time
 
 # ML data
 import numpy as np
@@ -15,7 +10,7 @@ import pandas as pd
 # custom modules
 from cb_auth      import CB_API_KEY, CB_API_PRIVATE_KEY
 from coinbase     import CoinBase
-from mylibs.utils import load, file_last_alpha, file_newest
+from mylibs.utils import load, file_newest
 from mylibs.utils import map_dict, str_dict, str_iter
 from mylibs.utils import datetime_iso, print_dyn_line
 from trade        import TradeDecider, CBTrader
