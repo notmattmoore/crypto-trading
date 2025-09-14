@@ -222,9 +222,9 @@ def trading_loop(traders, filenames_model_params, trade_on_rec=True, loop_min_ti
   """
   print(f"Entering trading loop for symbol pairs {str_iter(traders.keys(), sep=', ')}.")
   while True:
-    time_sleep = (LOOP_DELAY - t.localtime().tm_sec) % DATA_INTERVAL
+    time_sleep = (LOOP_DELAY - time() % 60) % DATA_INTERVAL
     if VERBOSE_SUMMARY:
-      print_dyn_line(f"-- Sleeping until {datetime_iso(t.time() + time_sleep)} ({time_sleep}s) ", pad='-')
+      print_dyn_line(f"-- Sleeping until {datetime_iso(time() + time_sleep)} ({time_sleep:.0f}s) ", pad='-')
     sleep(time_sleep)
     time_start = time()
 
