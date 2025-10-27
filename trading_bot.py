@@ -254,13 +254,7 @@ for (symbol_pair, bals) in SYMBOLS_CONFIG.items():
 # Execute the trading loop.
 trading_loop(traders, filenames_model_params)
 
-
 from sys import exit; exit()
-
-T = traders["ETH-USD"]
-print(f"{T.take_profit_perc=}, {T.stop_loss_perc=}, {T.take_profit_ratchet=}")
-T.take_profit_ratchet = 0.01
-print(f"{T.take_profit_perc=}, {T.stop_loss_perc=}, {T.take_profit_ratchet=}")
 
 # NOT EXECUTED {{{1
 # Don't trade.
