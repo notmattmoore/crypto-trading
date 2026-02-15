@@ -719,6 +719,7 @@ class CBTrader:  # {{{1
     self.data_expire    = data_expire
     self.balance_asset  = balance_asset
     self.balance_curr   = balance_curr
+    self.value_total    = np.nan
     self.reserve_curr   = reserve_curr
     self.reserve_asset  = reserve_asset
 
@@ -797,9 +798,10 @@ class CBTrader:  # {{{1
     """
     self._print_verbose(f"-- {datetime_iso()} --")
 
-    # Update the data, process positions.
-    data_update_latest = self.data_update()
+    # Update the data, process positions, calculate total value.
+    self.data_update()
     self._positions_minder()
+    self.value_total = self.data_most_recent_block(size=1, stale=np.inf)["close"].mean() * self.balance_asset + self.balance_curr
 
     # Get a trading recommendation, determine whether to trade, and act on it.
     trade_rec = self.decider(self.data_most_recent_block())
@@ -815,20 +817,14 @@ class CBTrader:  # {{{1
     else:
       getattr(self, f"{trade_rec}_strat", self.fallback_strat)()
 
-    if self.history != False:
-      self.history.append({
-        "data_update"   : data_update_latest,
-        "balance_asset" : self.balance_asset,
-        "balance_curr"  : self.balance_curr,
-        "positions"     : deepcopy(self.positions),
-        "rec"           : trade_rec,
-      })
-
-    bal_asset = self._format_asset(self.balance_asset)
-    bal_curr  = self._format_curr(self.balance_curr)
-    self._print_verbose(f"Balances | {self.symbol_asset}: {bal_asset}, {self.symbol_curr}: {bal_curr}")
-
-    self._log_data(data_update_latest)
+    # Write history, log data, and print status.
+    self._history_manager()
+    self._log_data(self._data_update_latest)
+    self._print_verbose(
+      f"Balances | {self.symbol_asset}: {self._format_asset(self.balance_asset)}, "
+      f"{self.symbol_curr}: {self._format_curr(self.balance_curr)}, "
+      f"Total Value: {self.value_total} {self.symbol_curr}"
+    )
 
     # Expire old data and try to get get missing candles
     self.data_do_expire()
@@ -1693,6 +1689,7 @@ class CBTrader:  # {{{1
       "symbol_pair",
       "balance_asset",
       "balance_curr",
+      "value_total",
       "history",
       "positions",
       "_halt_resume",
