@@ -1500,7 +1500,7 @@ class CBTrader:  # {{{1
     for order in ["stop_loss", "take_profit"]:
       desc[order] = self._format_curr(p[order]['price'])
       if "type" in p[order].keys():  # use an acronym of what the order type is
-        desc[order] += " (" + ''.join(r[0] for r in re.split("[\s\-_]", p[order]["type"])) + ')'
+        desc[order] += " (" + ''.join(r[0] for r in re.split(r"[\s\-_]", p[order]["type"])) + ')'
 
     if np.isfinite(p["delayed_sell"]["time"]):
       desc["delayed_sell"] = datetime_iso(p["delayed_sell"]["time"])
