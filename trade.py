@@ -834,7 +834,7 @@ class CBTrader:  # {{{1
   def data_update(self, direction="future", size=np.inf):  # {{{
     """
     Update candle data. Detect missing data and expire data if self.data is too
-    long. Returns the data update. Parameters:
+    long. Returns the data update and sets self._data_update_latest. Parameters:
     - direction: if "future", then get candles starting from the most recent
         candle in self.data to the current time. If "past", get $size-many
         candles in the past before the first candle in self.data.
@@ -852,7 +852,7 @@ class CBTrader:  # {{{1
 
     # Get the new data, index it by timestamp, merge it with existing data, and
     # then reindex it.
-    self._data_update = self.CB.candles(
+    self._data_update_latest = self.CB.candles(
       self.symbol_pair, granularity=self.data_granularity,
       interval=self.data_interval, start=time_start, end=time_end
     )
@@ -877,8 +877,8 @@ class CBTrader:  # {{{1
           f"to exception\n  {err}."
         )
 
-    self._print_verbose(self._data_update.to_string(index=False))
-    return self._data_update
+    self._print_verbose(self._data_update_latest.to_string(index=False))
+    return self._data_update_latest
   #--------------------------------------------------------------------------}}}
   def data_most_recent_block(self, size=None, stale=None):  # {{{
     """
