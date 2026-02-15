@@ -1536,7 +1536,7 @@ class CBTrader:  # {{{1
       P_bals = pd.DataFrame({k: [p[k] for p in self.positions] for k in ["balance_asset", "balance_curr"]})
       P_profit = asset_price * P_bals["balance_asset"] + P_bals["balance_curr"]
       P_profit_perc = P_profit / P_bals["balance_curr"].abs()
-      P["Profit"] = P_profit.map(self._format_curr) + ' ' + P_profit_perc.map(lambda s: f"({s:.2%})")
+      P["Profit"] = P_profit.map(self._format_curr) + P_profit_perc.map(lambda s: f" ({s:.2%})")
 
     return P
   #--------------------------------------------------------------------------}}}
