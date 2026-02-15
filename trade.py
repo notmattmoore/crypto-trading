@@ -3,6 +3,7 @@
 from   copy      import deepcopy
 from   itertools import chain, repeat
 from   time      import time
+import datetime as dt
 import os
 import re
 import myutils as mu
@@ -679,7 +680,11 @@ class CBTrader:  # {{{1
   - halt_config: triple of the form (time_window, pct_thresh, time_wait), interpreted
     as "if over duration time_window seconds asset price has percent change less
     than pct_thresh, then halt trading for time_wait seconds".
-  - history: whether to record history.
+  - history: True, False, or a dt.timedelta value which determines how long to keep
+      history for. Stores history (the data update, balances, and positions) in
+      the dictionary CBTrader.history indexed by dt.datetime values.
+  - history_attribs: a list of attributes of CBTrader to save in the history
+      dictionary. Defaults to ["data_update", "balance_asset", "balance_curr", "positions"].
   - logging: False, 4-tuple of filenames (data, orders, positions, verbose), or a
     base filename. In the case of a base filename, logs will be stored in files
     filename_data.log, filename_orders.log, filename_positions.log, and
@@ -694,7 +699,7 @@ class CBTrader:  # {{{1
       min_buy_perc=0, max_buy_perc=1, max_volume_buy_perc=np.inf, ratio_buy=1,
       ratio_sell=1, stop_loss_perc=np.inf, take_profit_perc=np.inf,
       take_profit_ratchet=0, hold_length=np.inf, halt_config=None, history=False,
-      logging=False, verbose=0,
+      history_attribs=None, logging=False, verbose=0,
   ):
     self.decider = decider
     self.CB      = CB
@@ -731,17 +736,21 @@ class CBTrader:  # {{{1
 
     self.halt_config = halt_config
 
-    if history:
-      # At each call, append a dictionary of the form
-      #   {
-      #     "data_update"   : data_update,
-      #     "balance_asset" : asset balance,
-      #     "balance_curr"  : currency balance,
-      #     "positions"     : current positions,
-      #   }.
-      self.history = []
-    else:
+    # If the history option is set, then at each call save the attributes specified
+    # in history_attribs to CBTrader.history[dt.datetime.now()].
+    if history == False:
       self.history = False
+      self._history_expiration = None
+    elif history == True:
+      self.history = {}
+      self._history_expiration = None
+    else:
+      self.history = {}
+      self._history_expiration = history
+    if history_attribs == None:
+      self.history_attribs = []
+    else:
+      self._history_attribs = history_attribs
 
     if logging != False:
       self.logging = True
@@ -1644,6 +1653,24 @@ class CBTrader:  # {{{1
     with open(self.log_positions_filename, 'a') as f:
       f.write(f"-- {datetime_iso()} --\n")
       f.write(log_entry + '\n')
+  #--------------------------------------------------------------------------}}}
+  def _history_manager(self):  # {{{
+    """
+    If CBTrader.history is not False, then save the attributes specified
+    CBTrader._history_attribs to CBTrader.history[dt.datetime.now()]. Use
+    CBTrader._history_expiration (a dt.timedelta value) to expire history.
+    """
+    if self.history == False:
+      return
+
+    dt_now = dt.datetime.now()
+
+    # Expire history if history expiration is set.
+    if self._history_expiration is not None:
+      self.history = { k:self.history[k] for k in self.history.keys() if dt_now - k < self._history_expiration }
+
+    # Save the history.
+    self.history[dt_now] = {k: deepcopy(getattr(self, k)) for k in self._history_attribs}
   #--------------------------------------------------------------------------}}}
 
   def state_export(self, save=True):  # {{{

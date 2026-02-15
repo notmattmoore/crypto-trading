@@ -2,6 +2,7 @@
 # general
 from copy import deepcopy
 from time import sleep, time
+import datetime as dt
 
 # ML data
 import numpy as np
@@ -30,10 +31,16 @@ RESERVE_CURR, RESERVE_ASSET = 0, 0
 DATA_INTERVAL   = 60
 LOOP_DELAY      = 15   # CB minute candles should get updated ~15s after the minute
 
-# Verbosity levels.
+# Verbosity levels and output control
 VERBOSE_SUMMARY = True
 VERBOSE_DECIDER = 0
 VERBOSE_TRADER  = 0
+SUMMARY_PROFIT_OFFSETS = {  # what timedeltas to calculate profits for in the summary
+  dt.timedelta(hours=1)           : {"name" : "hour"},
+  dt.timedelta(hours=24)          : {"name" : "day"},
+  dt.timedelta(weeks=1)           : {"name" : "week"},
+  dt.timedelta(weeks=52.17857/12) : {"name" : "month"},
+}
 
 # Trader defaults.
 TRADER_DEFAULTS = {
@@ -41,6 +48,8 @@ TRADER_DEFAULTS = {
   "verbose"             : VERBOSE_TRADER,
   "max_volume_buy_perc" : 0.1,  # a single buy should be at most 10% of the average volume
   "halt_config"         : (24*60, -0.1, 7*24*60),  # if more than 10% decline over 24 hours, then halt trading for a week
+  "history"             : dt.timedelta(days=365.25/12*1.1), # store history for a bit over 1 month
+  "history_attribs"     : ["value_total"],  # store the total value of the trader so that we can calculate historical profit
 }
 SIMTRADER_KEYS = [   # params to keep from the simtrader
   "min_buy_perc", "max_buy_perc", "ratio_buy", "ratio_sell", "stop_loss_perc",
@@ -127,6 +136,27 @@ def trader_load(*, symbol_pair, balance_curr=0, balance_asset=0, load_state=True
 
   return trader, filename_model_params
 #----------------------------------------------------------------------------}}}
+def trader_hist_profits(T, offsets):  # {{{
+  """
+  Given trader T, calculate the historical profits (incl percentages) for each offset
+  in the dictionary offsets (the keys are the offsets).
+  """
+  if T.history == False:
+    return {k:{**v, "profit": np.nan, "profit_perc": np.nan} for (k,v) in offsets.items()}
+
+  # Find the closest history key for each offset, then calculate the profit based on
+  # that key.
+  offset_profits = { k:{**v, "delta_keyhist": (dt.timedelta.max, None)} for (k,v) in offsets.items() }
+  dt_now = dt.datetime.now()
+  for k in T.history.keys():
+    for (o, o_v) in offset_profits.items():
+      o_v["delta_keyhist"] = min(o_v["delta_keyhist"], (abs((dt_now - o) - k), k))
+  for (o, o_v) in offset_profits.items():
+    o_v["profit"] = T.history[o_v["delta_keyhist"][1]].get("value_total", np.nan) - T.value_total
+    o_v["profit_perc"] = o_v["profit"] / T.value_total
+
+  return offset_profits
+#----------------------------------------------------------------------------}}}
 def traders_print(traders, filenames_model_params):  # {{{
   """
   Print a composite summary for a dictionary of multiple traders (keys are symbol
@@ -139,7 +169,9 @@ def traders_print(traders, filenames_model_params):  # {{{
   )
   df_positions = pd.DataFrame()
   balances = pd.DataFrame(
-    columns=["Currency Budget", "Asset Balance", "Asset Value", "Profit"],
+    columns=["Currency Budget", "Asset Balance", "Asset Value"] \
+        + [f"Profit ({v['name']})" for v in SUMMARY_PROFIT_OFFSETS.values()] \
+        + ["Profit (total)"],
     index=traders.keys()
   )
   currencies = set()
@@ -160,17 +192,23 @@ def traders_print(traders, filenames_model_params):  # {{{
     P["Symbol"] = symbol_pair
     df_positions = pd.concat([df_positions, P])
 
-    # balances
+    # trader balances
     asset_value = T.data_most_recent_block(size=1, stale=np.inf)["close"].mean() * T.balance_asset
-    total_value = asset_value + T.balance_curr
-    profit = total_value - SYMBOLS_CONFIG[symbol_pair]["curr"]
-    profit_perc = total_value / SYMBOLS_CONFIG[symbol_pair]["curr"] - 1
-    balances.loc[symbol_pair] = {
+    offset_profits = trader_hist_profits(T, SUMMARY_PROFIT_OFFSETS)
+    profit_total = T.value_total - SYMBOLS_CONFIG[symbol_pair]["curr"]
+    profit_total_perc = T.value_total / SYMBOLS_CONFIG[symbol_pair]["curr"] - 1
+    balance_T = {
       "Currency Budget" : T._format_curr(T.balance_curr),
       "Asset Balance"   : T._format_asset(T.balance_asset),
       "Asset Value"     : T._format_curr(asset_value),
-      "Profit"          : f"{T._format_curr(profit)} ({profit_perc:+.2%})",
     }
+    balance_T.update({
+      f"Profit ({v['name']})" : f"{T._format_curr(v['profit'])} ({v['profit_perc']:+.2%})" for v in offset_profits.values()
+    })
+    balance_T["Profit (total)"] = f"{T._format_curr(profit_total)} ({profit_total_perc:+.2%})"
+    balances.loc[symbol_pair] = balance_T
+
+    # account balances
     currencies.update(symbol_pair.split('-'))
     formats.update(zip(symbol_pair.split('-'), [T._format_asset, T._format_curr]))
 
@@ -255,6 +293,8 @@ for (symbol_pair, bals) in SYMBOLS_CONFIG.items():
 trading_loop(traders, filenames_model_params)
 
 from sys import exit; exit()
+
+traders_print(traders, filenames_model_params)
 
 # NOT EXECUTED {{{1
 # Don't trade.
